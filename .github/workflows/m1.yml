@@ -1,0 +1,65 @@
+name: m1
+
+on:
+  workflow_dispatch:
+    inputs:
+      nodeVersion:
+        description: "Node.js version"
+        required: true
+  push:
+    tags:
+      - v*
+
+env:
+  LIBNODE_NODE_VERSION: ${{ github.event.inputs.nodeVersion }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+    runs-on: m1max
+    env:
+      LIBNODE_X86: 0
+      LIBNODE_SMALL_ICU: 1
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install ninja on macOS
+        run: HOMEBREW_NO_AUTO_UPDATE=1 arch -arm64 brew install ninja
+
+      - name: Download source code of Node.js
+        run: arch -arm64 python -m scripts.download
+
+      - name: Patch source code of Node.js
+        run: arch -arm64 python -m scripts.patch
+
+      - name: Build
+        run: arch -arm64 python -m scripts.build
+
+      - name: Copy headers
+        run: arch -arm64 python -m scripts.headers
+
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Postprocess
+        run: python -m scripts.postproc
+
+      - name: Archive
+        run: |
+          zipname=$(python -m scripts.archive)
+          echo "::set-output name=zipname::$zipname"
+        shell: bash
+        id: archive
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ steps.archive.outputs.zipname }}
+          path: ${{ steps.archive.outputs.zipname }}
+
+      - name: Test
+        run: python -m scripts.test
